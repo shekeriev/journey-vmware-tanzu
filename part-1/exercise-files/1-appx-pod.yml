@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: appx-pod
+  labels:
+    app: <<pod-app>>
+    ver: <<pod-ver>>
+spec:
+  containers:
+  - name: appx-container
+    image: <<image:tag>>
+    ports:
+    - containerPort: <<container-port>>

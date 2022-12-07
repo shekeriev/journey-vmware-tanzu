@@ -1,0 +1,359 @@
+Credits
+---------------
+ - https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-tanzu/GUID-152BE7D2-E227-4DAA-B527-557B564D9718.html
+ - https://williamlam.com/2020/11/complete-vsphere-with-tanzu-homelab-with-just-32gb-of-memory.html
+ - https://github.com/lamw/vsphere-with-tanzu-homelab-scripts
+ - https://github.com/vsphere-tmm/vsphere-with-tanzu-quick-start
+ - https://patrik.kernstock.net/2021/06/downscaling-supervisorcontrolplanevms-from-three-to-two-nodes/
+
+Hardware
+---------------
+ * Requirements:
+   - Single ESXi host with at least 32 GB RAM and 250 GB storage that supports ESXi 7.x
+
+ * Actual hardware used:
+   - 1U rack server SGI CH-C1104-GP2
+     - CPU: 2 x E5-2609 v4 @ 1.70 GHz
+     - RAM: 64 GB DDR4
+     - HDD: 500 GB SSD
+     - NIC: 2 used out of 4
+
+ * Notes: 
+   - Please note that this is not a production-grade set up. It is intended only for lab/test/study purposes
+
+Software
+---------------
+ - ESXi 7.0 U2a (https://my.vmware.com/group/vmware/downloads/details?downloadGroup=ESXI70U2A&productId=974&rPId=55457)
+ - VCSA 7.0 U2b (https://my.vmware.com/group/vmware/downloads/details?downloadGroup=VC70U2B&productId=974&rPId=52847)
+ - PhotonOS (https://packages.vmware.com/photon/3.0/Rev3/ova/photon-hw13_uefi-3.0-a383732.ova)
+ - HAProxy (https://cdn.haproxy.com/download/haproxy/vsphere/ova/haproxy-v0.2.0.ova)
+
+Prerequisites
+---------------
+ * Machines and roles:
+   - ESXi host with clean installation of the latest version
+   - Router (RTR) virtual machine that will
+     - provide connectivity to the internal specialized networks
+     - act as a local DNS service (this can be skipped if another local DNS is available)
+   - vCenter (VCSA)
+   - Workstation (WRK) 
+
+ * Notes:
+   - For machine placement and connectivity refer to the provided drawing
+
+Preparation
+---------------
+ * Router and DNS
+   - RTR can be set up manually or by using a script 
+   (!) An adjusted version (https://github.com/shekeriev/journey-vmware-tanzu/tree/main/part-2/demo-files/0-configuration/1-rtr-setup.sh) of the original script (https://github.com/lamw/vsphere-with-tanzu-homelab-scripts/blob/master/setup_photon_router.sh) was used 
+
+ * vCenter (installation)
+   - Download and mount the installation media on the Workstation
+   - Install it either using the UI or the CLI way
+   - Should you decide to go with the CLI, navigate to vcsa-cli-installer folder and then in the one for your OS. For example, for Windows this may be D:\vcsa-cli-installer\win32
+   - Execute the following: vcsa-deploy install --accept-eula --acknowledge-ceip --no-ssl-certificate-verification <path-to-json-file>
+   (!) An adjusted version (https://github.com/shekeriev/journey-vmware-tanzu/tree/main/part-2/demo-files/0-configuration/2-vcsa-setup.json) of the original file (https://github.com/lamw/vsphere-with-tanzu-homelab-scripts/blob/master/vcsa.tanzu.local.json) was used 
+ 
+ * vCenter (post-installation #1) - resource settings
+   - With the VCSA turned off, adjust the memory down to 8 GB and the power it back on
+   - Log in via SSH to VCSA and change the /etc/vmware/wcp/wcpsvc.yaml (depending on your situation, you may leave it as it is)
+     - Reduce the minmasters and maxmasters to 2
+
+ * vCenter (post-installation #2) - system configuration
+   - Make sure you have the PowerShell Core and Power CLI installed on the Workstation
+   - If your are missing just the PowerCLI, you may install it with (the last part is usefull when you already have similar cmdlets comming from Hyper-V module for example)
+     Install-Module -Name VMware.PowerCLI -Scope CurrentUser -AllowClobber
+   - Execute the post setup script (don't forget to adjust the values)
+     .\2-vcsa-post-setup.ps1
+   (!) An adjusted version (https://github.com/shekeriev/journey-vmware-tanzu/tree/main/part-2/demo-files/0-configuration/2-vcsa-post-setup.ps1) of the original script (https://github.com/lamw/vsphere-with-tanzu-homelab-scripts/blob/master/setup_vcsa.ps1) was used
+
+ * vCenter (post-installation #3) - finalize the connectivity
+   - Add an uplink (the second NIC) to the VDS 
+   - Move the interfaces of the Router VM to the VDS port groups
+
+ * Workstation
+   - Ether add the DNS (Router VM) as a second DNS or change the hosts file by adding records for the ESXi host and the VCSA machine
+   - Add routes to the private networks behind the Router
+     - For example, on Windows this can be done with:
+       route ADD 10.10.0.0 MASK 255.255.255.0 192.168.81.240
+       route ADD 10.20.0.0 MASK 255.255.255.0 192.168.81.240
+   - Test that the networks are reachable
+     ping 10.10.0.1
+     ping 10.20.0.1
+
+Supervisor Cluster (deployment)
+---------------
+ * Log in to vCenter
+
+ * Create Content Library
+   - Navigate to Content Libraries
+   - Check the settings in Advanced and adjust them if needed
+   - Click the Create button to start the creation process
+     - Set name for example to TKG Content Library and click Next
+     - Select Subscribed content library option
+     - For Subscription URL enter https://wp-content.vmware.com/v2/latest/lib.json
+     - Set the Download content option to either Immediately or When needed
+     - Click Next and accept the certificate by clicking Yes
+     - Select a datastore and click Next
+     - Click Finish to finalize the process
+   - Wait for the sync process to finish (if you have selected Immediately it may take 30+ minutes)
+
+ * HAProxy deployment
+   - Download the HAProxy template (https://cdn.haproxy.com/download/haproxy/vsphere/ova/haproxy-v0.2.0.ova)
+   - Import the appliance via the UI (preffered)
+   - Set the following configuration values:
+     - Permit Root Login = True
+     - Host Name = haproxy.tanzu.lab
+     - DNS = 192.168.81.240
+     - Management IP = 192.168.81.242/24
+     - Management Gateway = 192.168.81.1
+     - Workload IP = 10.20.0.2/24
+     - Workload Gateway = 10.20.0.1
+     - Frontend IP = 10.10.0.2/24
+     - Frontend Gateway = 10.10.0.1
+     - Load Balancer IP Ranges, comma-separated in CIDR format (Eg 1.2.3.4/28,5.6.7.8/28) = 10.10.0.64/26
+     - Dataplane API Management Port = 5556
+     - HAProxy User ID = wcp
+     - All passwords are set to <YOUR-HAPROXY-PASS>
+   - Power on the HAProxy machine
+   - Change the rp_filter (Reverse Path Filtering) settings  
+    ./3-haproxy-setup.sh
+
+ * Enable Workload Management and Create Management Cluster
+   - Switch to Workload Management
+   - Click on the Get Started button to start the wizard
+   - Go though the questions and answer appropriately (actually used values listed bellow)
+     - vCenter Server and Network:
+       - vCenter: VCSA.TANZU.LAB
+       - Networking stack: vCenter Server Network
+     - Select a Cluster:
+       - Cluster Name: Tanzu-Cluster
+     - Control Plane Size:
+       - Resource allocation: Tiny (2 CPU, 8 GB memory, 32 GB disk)
+     - Storage:
+       - Control Plane Nodes: Tanzu-Storage-Policy
+     - Load Balancer:
+       - Name: haproxy
+       - Type: HAProxy
+       - Data Plane API: 192.168.81.242:5556
+       - User: wcp
+       - Pass: <YOUR-HAPROXY-PASS>
+       - Virtual IP Range: 10.10.0.64 - 10.10.0.127
+       - Certificate: (use the value you get by executing vi /etc/haproxy/ca.crt in an SSH session to the HAProxy VM)
+     - Management Network:
+       - Network: Management
+       - Start IP: 192.168.81.245
+       - Mask: 255.255.255.0
+       - GW: 192.168.81.1
+       - DNS: 192.168.81.240 (our router + dns machine)
+       - Domain: tanzu.lab
+       - NTP: 0.bg.pool.ntp.org (or better if you have a local one)
+     - Workload Network:
+       - IP addresses for Services: 10.96.0.0/24
+       - DNS Servers: 192.168.81.240 (our router + dns machine)
+       - Add a Workload Network
+         - Name: network-1
+         - Port group: Workload
+         - Gateway: 10.20.0.1
+         - Subnet: 255.255.255.0
+         - IP address range: 10.20.0.10 - 10.20.0.254
+     - Content Library (Tanzu Kubernetes Grid Service Configuration)
+       - Content Library: TKG Content Library
+   - Click Finish to confirm the deployment
+
+Supervisor Cluster (post-deployment)
+---------------
+ * Create Namespace
+   - Navigate to Workload Management > Namespaces and create one (for example, demo)
+
+ * Add permissions
+   - Add the administrator@vsphere.lab with Can edit permissions
+
+ * Add storage 
+   - Select the Tanzu-Storage-Policy
+
+ * Add VM Class in VM Service tile
+   - VM Service > Add VM Class > select all > Confirm
+
+ * Install CLI Tools
+   - Click on the Open link under Link to CLI Tools in the Status tile (the first one)
+   - Download and extract CLI Plugin (the URL may be something like https://10.10.0.64/wcp/plugin/windows-amd64/vsphere-plugin.zip)
+
+ * Access the supervisor cluster
+   - Login 
+     kubectl vsphere login --server=10.10.0.64 -u administrator@vsphere.lab --insecure-skip-tls-verify
+   - Get list of contexts
+     kubectl config get-contexts
+   - Select a default context
+     kubectl config use-context demo
+
+ * Notes:
+   - The IP address 10.10.0.64 can be seen from Workload Management > Clusters (it should be the first address that we allowed in the Frontend network for Load Balancers)
+
+Guest Cluster (deployment)
+---------------
+ * Prepare a configuration file
+   - Refer to the sample configuration files here: https://docs.vmware.com/en/VMware-vSphere/7.0/vmware-vsphere-with-tanzu/GUID-B1034373-8C38-4FE2-9517-345BF7271A1E.html
+   - This file was used during the demo (https://github.com/shekeriev/journey-vmware-tanzu/tree/main/part-2/demo-files/tkc-01.yml)
+   - If you wonder where the release number came from, check the list of available Tanzu Kubernetes releases with
+     kubectl get tanzukubernetesreleases
+
+ * Start the creation of the guest cluster
+   kubectl apply -f tkc-01.yml
+	
+ * Check the progress
+   kubectl get tanzukubernetescluster demo-tkc-01
+
+ * Check the progress in the vCenter interface
+
+ * Explore the virtual machines behind the cluster
+   kubectl get virtualmachine
+
+ * Check details for the first (and only in our case, otherwise the name should be changed) control plane node
+   kubectl describe virtualmachine demo-tkc-01-control-plane
+	
+ * Login on the guest cluster
+   kubectl-vsphere login --server=10.10.0.64 -u administrator@vsphere.lab --insecure-skip-tls-verify --tanzu-kubernetes-cluster-name demo-tkc-01 --tanzu-kubernetes-cluster-namespace demo
+
+ * Change the context to the guest cluster
+   kubectl config use-context demo-tkc-01
+
+ * List the nodes of the guest cluster
+   kubectl get nodes
+   kubectl get nodes -o wide
+
+Application (deployment)
+---------------
+ * Application 1
+   - Go to folder 1-pod-svc-np
+   - Check the files
+   - Deploy the pod
+     kubectl apply -f pod.yml
+   - Deploy the service (with NodePort)
+     kubectl apply -f svc.yml
+   - Check the progress
+     kubectl get pods,service
+   - Use the IP address of the service to check the application in a browser window
+   - Delete the application
+     kubectl delete -f pod.yml
+     kubectl delete -f svc.yml
+
+ * Application 2
+   - Go to folder 2-pod-svc-lb
+   - Check the files
+   - Deploy the pod
+     kubectl apply -f pod.yml
+   - Deploy the service (with NodePort)
+     kubectl apply -f svc.yml
+   - Check the progress
+     kubectl get pods,service
+   - Use the IP address of the associated load balancer to check the application in a browser window
+   - Delete the application
+     kubectl delete -f pod.yml
+     kubectl delete -f svc.yml
+
+ * Application 3
+   - Go to folder 3-bundle
+   - Check the file
+   - Deploy the bundle
+     kubectl apply -f deploy-bundle.yml
+   - Check the progress
+     kubectl get pods,service,deployment,rs
+   - It seems that there is a problem with our deployment. Let's check 
+     kubectl describe deployment 
+   (!) If we had multiple deployments, we had to sepcify a particular one (by name)
+   - It seems that the problem is comming from the replcation set. Let's check 
+     kubectl describe rs
+   (!) If we had multiple replica sets, we had to sepcify a particular one (by name)
+   - Let's solve this by adding a role binding for all authenticated users to run any type of container
+     kubectl create clusterrolebinding default-tkg-admin-privileged-binding --clusterrole=psp:vmware-system-privileged --group=system:authenticated
+   - Delete the bundle and try again
+     kubectl delete -f deploy-bundle.yml
+     kubectl apply -f deploy-bundle.yml
+   - Check the progress
+     kubectl get pods,service,deployment,rs
+   - Use the IP address of the associated load balancer to check the application in a browser window
+   - Delete the bundle 
+     kubectl delete -f deploy-bundle.yml
+
+
+Clusters Management
+---------------
+ * Scale up a cluster (+2 worker node) and monitor the progress
+   - Switch the context back to the supervisor cluster
+     kubectl config use-context demo
+   - List the guest clusters
+     kubectl get tanzukubernetescluster
+   - Edit the running configuration of the only guest cluster
+     kubectl edit tanzukubernetescluster demo-tkc-01
+   - List the guest clusters and note the status
+     kubectl get tanzukubernetescluster
+   - Get detailed information about the cluster
+     kubectl describe tanzukubernetescluster demo-tkc-01
+   - Switch the context to the guest cluster
+     kubectl config use-context demo-tkc-01
+   - List the nodes of the cluster
+     kubectl get nodes -o wide
+
+ * Redeploy the bundle again and check the pods placement
+
+ * Scale down the cluster (to 1 worker node) and monitor the progress
+   - Switch the context back to the supervisor cluster
+     kubectl config use-context demo
+   - List the guest clusters
+     kubectl get tanzukubernetescluster
+   - Edit the running configuration of the only guest cluster
+     kubectl edit tanzukubernetescluster demo-tkc-01
+   - List the guest clusters and note the status
+     kubectl get tanzukubernetescluster
+   - Get detailed information about the cluster
+     kubectl describe tanzukubernetescluster demo-tkc-01
+   - Switch the context to the guest cluster
+     kubectl config use-context demo-tkc-01
+   - List the nodes of the cluster
+     kubectl get nodes -o wide
+
+ * Check the pods placement of the bundle
+
+ * Create second cluster
+   - Switch the context back to the supervisor cluster
+     kubectl config use-context demo
+   - Create the second cluster (the file used during the demo can be found here https://github.com/shekeriev/journey-vmware-tanzu/tree/main/part-2/demo-files/tkc-02.yml)
+     kubectl apply -f tkc-02.yml
+   - Get information about the second cluster
+     kubectl get tanzukubernetescluster demo-tkc-02
+   - Get even more detailed information about the second cluster
+     kubectl describe tanzukubernetescluster demo-tkc-02
+   - Login to it
+     kubectl-vsphere login --server=10.10.0.64 -u administrator@vsphere.lab --insecure-skip-tls-verify --tanzu-kubernetes-cluster-name demo-tkc-02 --tanzu-kubernetes-cluster-namespace demo
+   - Switch the context
+     kubectl config use-context demo-tkc-02
+   - List its nodes
+     kubectl get nodes -o wide
+     
+ * Deploy an app (the second one) on cluster #2 
+   kubectl apply -R -f .
+
+Remove Guest Clusters
+---------------
+ * Delete the second cluster
+   - Switch to the supervisor context
+     kubectl config use-context demo
+   - Send the intent to the cluster
+     kubectl delete -f 4-tkc-02.yml
+   - Monitor the progress in the shell
+     kubectl get tanzukubernetescluster
+
+ * Delete the first cluster as well
+   - Make sure that you are in the supervisor context. If not, execute
+     kubectl config use-context demo
+   - Send the delete command
+     kubectl delete tanzukubernetescluster demo-tkc-01
+   - Monitor the progress in the shell
+     kubectl get tanzukubernetescluster
+
+Remove the Supervisor Cluster
+---------------
+ * Disable (and delete) the supervisor cluster
+   - Go to Workload Management > Clusers > Select the cluster 
+   - Click Disable > Confirm

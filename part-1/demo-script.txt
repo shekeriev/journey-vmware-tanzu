@@ -1,0 +1,545 @@
+# 
+# VMUG Bulgaria - The Journey To VMware Tanzu - Part 1 - Minikube
+# Online, Dimitar Zahariev, 2021.07.06
+# 
+
+# 
+# For the purpose of this demo we will assume that:
+# - We are working on a Windows 10 machine
+# - There is a recent version of VMware Workstation (16.x) installed
+# - We have access to a Docker instance (either in a locally installed, VM-based, or elsewhere)
+# 
+
+# 
+# Warm up with containers in Docker
+# - test the process-container relation
+# - background services (or detached continuosly running containers)
+# - port redirection
+# - data exchange with the host
+# - layered filesystem
+#
+
+# Let's start a simple Alpine-based container
+docker container run --name alp1 -it alpine sh
+
+# Explore a bit and then execute the exit command
+exit
+
+# Now check if there are any containers running with
+docker container ls
+
+# None. Let's change the command to
+docker container ls -a
+
+# Aha, here is our container. Let's remove it 
+docker container rm alp1
+
+# And start a new one but this time with (execute it outside an editor)
+docker container run --name alp1 -it --rm alpine sh
+
+# Explore a bit. Once done, hit Ctrl+P Ctrl+Q to close the session
+
+# Now check if there are any containers running with
+docker container ls
+
+# It is there and running
+
+# To return back, execute 
+docker container attach alp1
+
+# Now, let's close the session and exit the container
+exit
+
+# Let's start a container out of the official NGINX image
+docker container run --name web1 -d nginx
+
+# Check what containers are running
+docker container ls
+
+# Try to access the web page in the running container
+curl http://localhost
+
+# No success
+
+# Let's stop and remove the container
+docker container rm --force web1
+
+# Now, start a new one but with port redirection (you may need to adjust the rule - host-port:container-port)
+docker run --name web1 -d -p 80:80 nginx
+
+# Try to access the web page in the running container
+curl http://localhost
+
+# This time it is working as expected
+
+# Let's stop and remove the container
+docker container rm --force web1
+
+# What if we want to use a custom web page?
+# First option is to mount or specify one during the container creation process
+
+# Let's create a folder with a custom index.html file in it
+mkdir web
+echo 'My cutom page :)' > web/index.html
+
+# Now, run a container with it
+docker run --name web1 -d -p 80:80 -v $(pwd)/web:/usr/share/nginx/html:ro nginx
+
+# Try to access the web page in the running container
+curl http://localhost
+
+# Again, it is working as expected
+
+# Let's stop and remove the container
+docker container rm --force web1
+
+# Now, let's create our own image and thest the layered filesystem
+
+# Create a Dockerfile file in it with the following content
+FROM nginx
+COPY web/index.html /usr/share/nginx/html
+
+# Create the image with
+docker image build -t my-nginx:v1 .
+
+# List the images
+docker image ls
+
+# Now, run a container based on our image
+docker run --name web1 -d -p 80:80 my-nginx:v1
+
+# Try to access the web page in the running container
+curl http://localhost
+
+# We should see the new (the one made by us) default index page
+
+# Open a session to the container 
+docker container exec -it web1 bash
+
+# And change the /usr/share/nginx/html/index.html file
+echo 'Another page :)' > /usr/share/nginx/html/index.html
+
+# Close the session
+exit
+
+# Try to access the web page in the running container
+curl http://localhost
+
+# Check the changes that happened to the container's filesystem
+docker container diff web1
+
+# Let's stop and remove the container
+docker container rm --force web1
+
+# We warmed up and are ready to move forward ;)
+
+# 
+# Install minikube
+# 
+# For Linux distributions execute the following steps:
+# curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+# sudo install minikube-linux-amd64 /usr/local/bin/minikube
+# 
+# For Windows download the installer from here:
+# https://storage.googleapis.com/minikube/releases/latest/minikube-installer.exe
+#
+# For other OSes or options check here: https://minikube.sigs.k8s.io/docs/start/)
+
+# Check if the binary is reachable
+minikube version
+
+#
+# Explore minikube
+#
+
+# Check available commands
+minikube
+
+# Check the status of the minikube cluster
+minikube status
+
+# Check which driver (docker, virtualbox, etc.) will be used to start the cluster
+minikube start --dry-run=true
+
+# Start the cluster with the VMware driver (you should have VMware Workstation installed)
+minikube start --driver=vmware
+
+# If the above doesn't work, make sure that the folder in which vmrun.exe resides is included in the PATH variable
+# You can always check with: echo %PATH%
+
+# Establish an SSH session to the virtual machine
+minikube ssh
+
+# Check the default user
+id
+
+# Check the installed version of Docker
+docker version
+
+# Check if there are any images available locally
+docker image ls
+
+# Check if there are any containers running
+docker container ls
+
+# Close the SSH session
+exit
+
+# 
+# Install kubectl 
+# 
+# For Linux distributions execute the following steps:
+# curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+# sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+# 
+# For Windows download the binary from here:
+# https://dl.k8s.io/release/v1.21.0/bin/windows/amd64/kubectl.exe
+# 
+# For other OSes or options check here: https://kubernetes.io/docs/tasks/tools/install-kubectl/
+
+# Check if the binary is reachable
+kubectl version --client
+
+#
+# Explore kubectl
+#
+
+# List all avilable commands
+kubectl 
+
+# Retrieve information for the cluser that is configured currently (this should be the minikube)
+kubectl cluster-info
+
+# Retrieve a list of all pods (in the default namespace)
+kubectl get pods
+
+# Get the pods in all namespaces
+kubectl get pods --all-namespaces
+
+# Retrieve information about the nodes (we have only one)
+kubectl get nodes
+
+# Retrieve a list of all resources in all namespaces
+kubectl get all --all-namespaces
+
+# Get information about all supported resources
+kubectl api-resources
+
+# List all supported API versions
+kubectl api-versions
+
+# Get information about the POD resource
+kubectl explain pod
+
+# Get information about the SPEC section of the POD resource
+kubectl explain pod.spec
+
+# Filter the required fields in the SPEC section of the POD resource
+# Linux/macOS: kubectl explain pod.spec | grep required
+# Windows: kubectl explain pod.spec | find.exe /I `"required`"
+
+# Get information about the CONTAINERS portion of the SPEC section of the POD resource
+kubectl explain pod.spec.containers
+
+#
+# Work with pods
+#
+
+# Imperative creation of a pod with command
+
+# Create an NGINX based pod
+kubectl run nginx-pod --image nginx
+
+# Check the result
+kubectl get pods
+
+# Remove the pod
+kubectl delete pod nginx-pod
+
+# Imperative creation with configuration file
+
+# Check the contents of the file
+# Using vi: vi demo-files/1-appa-pod.yml
+# Using VSCode: code demo-files/1-appa-pod.yml 
+
+# Create the pod in an imperative fashion but using a file
+kubectl create -f demo-files/1-appa-pod.yml  
+
+# Check the result
+kubectl get pods
+
+# Display detailed information about the pod
+kubectl describe pod appa-pod 
+
+# Check the contents of the new version of the file
+# Using vi: vi demo-files/2-appa-pod-ext.yml
+# Using VSCode: code demo-files/2-appa-pod-ext.yml 
+
+# Compare the initial configuration file with its extended version
+# Using vimdiff: vimdiff demo-files/1-appa-pod.yml demo-files/2-appa-pod-ext.yml
+# Using PowerShell: Compare-Object (Get-Content -Path demo-files/1-appa-pod.yml) -DifferenceObject (Get-Content -Path demo-files/2-appa-pod-ext.yml) -IncludeEqual
+
+# Apply the changes coming from the extended file
+kubectl apply -f demo-files/2-appa-pod-ext.yml
+
+# Note the warning (it is because of the imperative creation)
+
+# Display detailed information about the pod
+kubectl describe pod appa-pod 
+
+# Explore the labels section
+
+#
+# Work with services
+#
+
+# Expose the service running on the pod and make it reachable on the IP address of our single-node cluster
+kubectl expose pod appa-pod --name=appa-svc --target-port=80 --type=NodePort
+
+# Display information about the service
+kubectl get svc appa-svc 
+
+# Show detailed information about the service
+kubectl describe svc appa-svc
+
+# Check how the service can be reached
+minikube service list
+
+# Copy the appa-svc url and paste it to a browser tab. You should see a working "application"
+
+# Remove the service
+kubectl delete svc appa-svc
+
+# Explore the configuration file that will create a similar service
+# Using vi: vi demo-files/3-appa-svc.yml
+# Using VSCode: code demo-files/3-appa-svc.yml
+ 
+# Create the service in a declarative manner
+kubectl apply -f demo-files/3-appa-svc.yml 
+
+# Display detailed information about the service
+kubectl describe svc appa-svc 
+
+# Note the Endpoints position. It contains a reference to the pod
+
+# Ask again for the available services
+minikube service list
+
+# Copy the appa-svc url and paste it to a browser tab. The "application" should be reachable
+# Note that the port is different. This time we set it to a fixed value
+
+# Remove the pod
+kubectl delete pod appa-pod
+
+# Refresh the open browser tab. Now, the "application" should not be reachable
+
+# Show detailed information about the service
+kubectl describe svc appa-svc 
+
+# Note the Endpoints position. It is empty
+
+#
+# Work with deployments (imperative)
+#
+
+# Create a deployment with two pod replicas
+kubectl create deployment appa-deploy --image=shekeriev/k8s-appa:v1 --replicas=2 --port=80
+
+# List deployment objects
+kubectl get deployment
+
+# Show detailed information about our deployment
+kubectl describe deployment appa-deploy
+
+# Scale up the deployment to ten pod replicas
+kubectl scale deployment appa-deploy --replicas=10
+
+# Watch how the pod replicas are being created
+kubectl get pods -w
+
+# Press Crl+C to stop the pods monitoring process
+
+# Check if all ten pods are there
+kubectl get pods
+
+# Remove the deployment together with the replicated pods
+kubectl delete deployment appa-deploy
+
+# Check what is happening with the pods
+kubectl get pods
+
+#
+# Work with deployments (declarative)
+#
+
+# Explore the configuration file that will be used to create a deployment
+# Using vi: vi demo-files/4-appa-deploy-v1.yml
+# Using VSCode: code demo-files/4-appa-deploy-v1.yml
+
+# Create the deployment in a declarative manner
+kubectl apply -f demo-files/4-appa-deploy-v1.yml
+
+# Watch while the pods are being created
+kubectl get pod -w
+
+# Press Crl+C to stop the pods monitoring process
+
+# Ask for deployment status
+kubectl get deployment
+
+# Ask for a detailed deployment status
+kubectl get deployment -o wide
+
+# Note the SELECTOR column content
+
+# Refresh the open browser tab a few times and pay attention where the "application" is running
+
+# Check the contents of the new version of the file
+# Using vi: vi demo-files/5-appa-deploy-v2.yml
+# Using VSCode: code demo-files/5-appa-deploy-v2.yml
+
+# Compare the two versions of the deployment
+# Using vimdiff: vimdiff demo-files/4-appa-deploy-v1.yml demo-files/5-appa-deploy-v2.yml 
+# Using PowerShell: Compare-Object (Get-Content -Path demo-files/4-appa-deploy-v1.yml) -DifferenceObject (Get-Content -Path demo-files/5-appa-deploy-v2.yml) -IncludeEqual
+
+# Retrieve detailed information about the current deployment
+kubectl describe deployment appa-deploy 
+
+# List current replica sets
+kubectl get rs
+
+# Retrieve detailed information about the only replice set (if there were many, we should have specified the name as well)
+kubectl describe rs 
+
+# Apply the newer deployment configuration but record the changes
+kubectl apply -f demo-files/5-appa-deploy-v2.yml --record
+
+# Watch the deployment rollout. It is done one pod at a time
+kubectl rollout status deployment appa-deploy 
+
+# Refresh the open browser tab a few times. You will notice that some of the requests will be served by the old version of the "application" and others by the new one
+
+# Retrieve the history of the deployment
+kubectl rollout history deployment appa-deploy 
+
+# Undo the latest deployment and return the the previous version of the "application"
+kubectl rollout undo deployment appa-deploy --to-revision=1
+
+# Watch the rollback process
+kubectl rollout status deployment appa-deploy 
+
+# Refresh the open browser tab. You will notice that some of the requests will be served by the old version of the "application" and others by the new one
+
+# Retrieve the history of the deployment
+kubectl rollout history deployment appa-deploy
+
+# 
+# Dashboard
+# 
+
+# Let's check what's in for us in the Dashboard
+minikube dashboard
+
+# Explore a bit. Once done, return to the terminal and hit Ctrl+C to close the session
+
+#
+# Clean up
+#
+
+# Remove the deployment together with the replica set and all the pods
+kubectl delete deployment appa-deploy
+
+# Remove the service
+kubectl delete service appa-svc
+
+# Check that there are not any unwanted resources left
+kubectl get all --all-namespaces
+
+# 
+# A file with multiple resources and a pod with multiple containers
+#
+
+# Explore the configuration file. Note how the two resource are separated by "---"
+# Using vi: vi demo-files/6-appb.yml
+# Using VSCode: code demo-files/6-appb.yml
+
+# Create the resources described in the file
+kubectl apply -f demo-files/6-appb.yml
+
+# List the deployments
+kubectl get deployment
+
+# Retrieve detailed information about the deployment
+kubectl describe deployment appb-deploy
+
+# List the available services
+minikube service list
+
+# Open a browser tab and navigate to the service url
+
+# List the pods in the default namespace
+kubectl get pods
+
+# Copy a pod's name and create a session to it to explore it further (substitute appb-deploy-xxxxxxxxxx-xxxxx with the name)
+
+# Explore the first container in the pod
+kubectl exec -it appb-deploy-xxxxxxxxxx-xxxxx --container appb-container-1st -- bash
+
+# Explore a bit by executing:
+ls
+cat index.php
+cat data/generated-data.txt
+tail -f data/generated-data.txt
+
+# Once done exploring, type the exit command to close the sesion
+
+# Explore the second container in the pod
+kubectl exec -it appb-deploy-xxxxxxxxxx-xxxxx --container appb-container-2nd -- sh
+
+# Explore a bit by executing:
+ls
+cat /data/generated-data.txt
+tail -f /data/generated-data.txt
+
+# Once done exploring, type the exit command to close the sesion
+
+# Copy a pod's name and check its logs (substitute appb-deploy-xxxxxxxxxx-xxxxx with the name)
+
+# Check the logs of the first container
+kubectl logs appb-deploy-xxxxxxxxxx-xxxxx --container appb-container-1st
+
+# Clean up by removing the resources created earlier
+kubectl delete -f demo-files/6-appb.yml
+
+
+# 
+# Exercise (Pod + Service)
+# 
+# Supporting files in the exercise-files folder
+# 
+###############################
+# Task:
+#  Pick up a web server image from a public registry, adjust the two manifest files, and deploy them to Kubernetes
+###############################
+# Plan:
+#  1. Explore the two files 1-appx-pod.yml and 1-appx-svc.yml
+#  2. Navigate to Docker Hub (https://hub.docker.com) and search for nginx or apache
+#  3. Pick up one and explore its details
+#  4. Replace the <<image:tag>> text in the 1-appx-pod.yml file with the selected image name and tag
+#  5. Replace the <<container-port>> text in the 1-appx-pod.yml file with the port on which the container provides its service (if not explicitly mentioned, use port 80)
+#  6. Use the same value from step #5 for the <<service-port>> and <<pod-port>> text in the 1-appx-svc.yml file
+#  7. Pick up a number in the range 30000-32767 and replace the <<external-port>> text in the 1-appx-svc.yml file with it
+#  8. Don't forget to align label values on both the pod and service
+#  9. Save the changes to both files
+# 10. Send both files to the cluster
+# 11. Check what resources have been created
+# 12. Examine each resource
+# 13. Check if the application is working
+# 14. Clean up by deleting both the pod and service
+###############################
+# Commands:
+#  kubectl apply 
+#  kubectl get
+#  kubectl describe
+#  minikube service 
+#  kubectl delete

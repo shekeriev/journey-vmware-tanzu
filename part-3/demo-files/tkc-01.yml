@@ -1,0 +1,28 @@
+apiVersion: run.tanzu.vmware.com/v1alpha1
+kind: TanzuKubernetesCluster
+metadata:
+  name: demo-tkc-01
+  namespace: demo
+spec:
+  distribution:
+    version: v1.19
+  settings:
+    network:
+      cni:
+        name: antrea
+      pods:
+        cidrBlocks:
+        - 193.0.2.0/16
+      serviceDomain: cluster01.local
+      services:
+        cidrBlocks:
+        - 195.51.100.0/12
+  topology:
+    controlPlane:
+      class: best-effort-xsmall
+      count: 1
+      storageClass: tanzu-storage-policy
+    workers:
+      class: best-effort-xsmall
+      count: 1
+      storageClass: tanzu-storage-policy

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: producer
+  labels:
+    app: fun-facts
+    role: producer
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5000
+    protocol: TCP
+  selector:
+    app: fun-facts
+    role: producer

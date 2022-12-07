@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels: 
+      app: fun-facts
+      role: consumer
+  minReadySeconds: 15
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: fun-facts
+        role: consumer
+    spec:
+      containers:
+      - name: cons-container
+        image: shekeriev/k8s-consumer:latest
+        ports:
+        - containerPort: 5000

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: observer-pod
+spec:
+  containers:
+  - name: observer-container
+    image: alpine
+    command: ["sleep", "1d"]
